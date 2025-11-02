@@ -2,7 +2,7 @@ name: Update proxy list
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # обновление каждые 6 часов
+    - cron: '*/30 * * * *'  # каждые 30 минут
   workflow_dispatch:       # позволяет запустить вручную
 
 jobs:
