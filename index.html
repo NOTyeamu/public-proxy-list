@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Proxy Checker</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <!-- Lucide Icons (для иконок) -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+        :root {
+            --primary-color: #10b981; /* Emerald 500 */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* Slate 900 */
+            color: #e2e8f0; /* Slate 200 */
+        }
+        .header-gradient {
+            background-image: linear-gradient(to right, #1e293b, #0f172a);
+        }
+        .scrollable-table {
+            max-height: 80vh; /* Увеличение высоты таблицы */
+            overflow-y: auto;
+        }
+        .status-online { color: #10b981; } /* Emerald (Онлайн) */
+        .status-slow { color: #facc15; } /* Yellow (Медленный) */
+        .status-down { color: #f87171; } /* Red (Не работает) */
+        
+        /* Стили для кнопки валидации */
+        #manual-check-btn {
+            animation: pulse-shadow 2s infinite;
+        }
+
+        @keyframes pulse-shadow {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- Основной контейнер приложения -->
+    <div id="app" class="p-4 md:p-8">
+
+        <!-- Header и Статус Real-Time -->
+        <header class="header-gradient rounded-xl shadow-2xl p-4 md:p-6 mb-8 flex flex-col md:flex-row justify-between items-center">
+            <h1 class="text-3xl font-extrabold text-white mb-4 md:mb-0">
+                <i data-lucide="scan-text" class="inline-block w-8 h-8 mr-2 text-emerald-400"></i>
+                Proxy Status Validator
+            </h1>
+            <div class="flex items-center space-x-4">
+                <span id="realtime-status" class="flex items-center text-sm font-semibold text-emerald-400">
+                    <span class="relative flex h-3 w-3 mr-2">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                    </span>
+                    Real-Time: Авто-валидация
+                </span>
+                <span id="proxy-count" class="px-3 py-1 bg-slate-700 text-slate-300 rounded-full text-sm">Всего: 0</span>
+            </div>
+        </header>
+
+        <!-- Фильтры, Поиск и Проверка -->
+        <div class="bg-slate-800 p-6 rounded-xl shadow-lg mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+
+                <!-- Поиск -->
+                <div class="col-span-1 md:col-span-2">
+                    <label for="search-input" class="block text-sm font-medium mb-1 text-slate-300">Поиск по IP/Стране</label>
+                    <input type="text" id="search-input" placeholder="Введите IP или название страны..."
+                           class="w-full p-2.5 rounded-lg bg-slate-700 border border-slate-600 focus:ring-emerald-500 focus:border-emerald-500 text-sm">
+                </div>
+
+                <!-- Фильтр Протоколов -->
+                <div>
+                    <label for="protocol-filter" class="block text-sm font-medium mb-1 text-slate-300">Протокол</label>
+                    <select id="protocol-filter" class="w-full p-2.5 rounded-lg bg-slate-700 border border-slate-600 focus:ring-emerald-500 focus:border-emerald-500 text-sm">
+                        <option value="">Все</option>
+                        <option value="HTTPS">HTTPS</option>
+                        <option value="HTTP">HTTP</option>
+                        <option value="SOCKS4">SOCKS4</option>
+                        <option value="SOCKS5">SOCKS5</option>
+                    </select>
+                </div>
+
+                <!-- Фильтр Анонимности -->
+                <div>
+                    <label for="anonymity-filter" class="block text-sm font-medium mb-1 text-slate-300">Анонимность</label>
+                    <select id="anonymity-filter" class="w-full p-2.5 rounded-lg bg-slate-700 border border-slate-600 focus:ring-emerald-500 focus:border-emerald-500 text-sm">
+                        <option value="">Все</option>
+                        <option value="High-Anonymous">Высокая</option>
+                        <option value="Anonymous">Анонимный</option>
+                        <option value="Transparent">Прозрачный</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Кнопки ручной проверки и разделения/объединения -->
+            <div class="flex justify-center space-x-4 mt-4">
+                <button id="manual-check-btn" class="flex items-center bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-8 rounded-full transition duration-150 text-base shadow-lg shadow-emerald-700/50" onclick="checkAllProxies()">
+                    <i data-lucide="refresh-ccw" class="w-5 h-5 mr-2"></i> Провести ручную валидацию
+                </button>
+                
+                <!-- Кнопка для разделения/объединения -->
+                <button id="toggle-ip-split-btn" class="flex items-center bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-full transition duration-150 text-base" onclick="toggleIpPortDisplay()">
+                    <i data-lucide="columns-3" class="w-5 h-5 mr-2"></i> Разделить IP/Порт
+                </button>
+            </div>
+        </div>
+
+        <!-- Таблица Прокси (на всю ширину) -->
+        <div class="bg-slate-800 p-6 rounded-xl shadow-lg">
+            <h2 class="text-xl font-semibold mb-4 text-white">Работоспособность Прокси (Всего: <span id="proxy-count-title">0</span>)</h2>
+
+            <div class="scrollable-table border border-slate-700 rounded-lg">
+                <table class="min-w-full table-auto">
+                <!-- Заголовок таблицы теперь генерируется JavaScript -->
+                <thead id="proxy-table-header" class="sticky top-0 bg-slate-700/80 backdrop-blur z-10">
+                </thead>
+                <tbody id="proxy-table-body" class="divide-y divide-slate-800">
+                    <!-- Строки будут добавлены JavaScript -->
+                </tbody>
+                </table>
+            </div>
+
+            <p id="no-results" class="text-center text-slate-500 py-8 hidden">
+                Нет прокси, соответствующих вашим критериям.
+            </p>
+        </div>
+
+        <!-- Модальное окно для сообщений (вместо alert/confirm) -->
+        <div id="message-modal" class="fixed inset-0 bg-slate-900 bg-opacity-75 z-50 flex items-center justify-center hidden">
+            <div class="bg-slate-800 p-6 rounded-xl shadow-2xl max-w-sm w-full text-center border border-emerald-500">
+                <i id="modal-icon" data-lucide="check-circle" class="w-8 h-8 text-emerald-500 mx-auto mb-3"></i>
+                <h3 id="modal-title" class="text-lg font-bold mb-2">Сообщение</h3>
+                <p id="modal-body" class="text-slate-300 mb-4 text-sm"></p>
+                <button onclick="closeModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 w-full">
+                    Закрыть
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- JavaScript Логика -->
+    <script>
+        // Инициализация Lucide icons
+        lucide.createIcons();
+
+        // 1. Моковые данные и Глобальное состояние
+        let allProxies = [];
+        let displayedProxies = [];
+        let currentSort = { column: 'latency_ms', direction: 'asc' };
+        const MAX_PROXIES = 500; 
+        let isIpPortSplit = false; 
+
+        // Доступные страны и протоколы для генерации моковых данных
+        const COUNTRIES = {
+            'US': 'United States', 'RU': 'Россия', 'DE': 'Germany',
+            'GB': 'United Kingdom', 'FR': 'France', 'CN': 'China',
+            'JP': 'Japan', 'BR': 'Brazil', 'AU': 'Australia', 'IN': 'India',
+            'CA': 'Canada', 'ES': 'Spain', 'IT': 'Italy', 'NL': 'Netherlands',
+            'KR': 'South Korea', 'SG': 'Singapore'
+        };
+        const PROTOCOLS = ['HTTP', 'HTTPS', 'SOCKS4', 'SOCKS5'];
+        const ANONYMITY = ['Transparent', 'Anonymous', 'High-Anonymous'];
+
+        /**
+         * @typedef {object} ProxyItem
+         * @property {string} ip_port
+         * @property {string} protocol
+         * @property {string} country_code
+         * @property {string} country_name
+         * @property {number} latency_ms
+         * @property {string} anonymity_level
+         * @property {'online' | 'slow' | 'down'} status
+         * @property {string} last_validated
+         */
+
+        /** Генерирует уникальный моковый прокси.
+         * @returns {ProxyItem}
+         */
+        function generateMockProxy() {
+            const ip = Array(4).fill(0).map(() => Math.floor(Math.random() * 255)).join('.');
+            const port = [80, 8080, 3128, 1080, 8888, 3000][Math.floor(Math.random() * 6)];
+            const countryCodes = Object.keys(COUNTRIES);
+            const countryCode = countryCodes[Math.floor(Math.random() * countryCodes.length)];
+            const statusOptions = ['online', 'online', 'online', 'online', 'slow', 'slow', 'down']; 
+
+            return {
+                ip_port: `${ip}:${port}`,
+                protocol: PROTOCOLS[Math.floor(Math.random() * PROTOCOLS.length)],
+                country_code: countryCode,
+                country_name: COUNTRIES[countryCode],
+                latency_ms: Math.floor(Math.random() * 1000) + 50, 
+                anonymity_level: ANONYMITY[Math.floor(Math.random() * ANONYMITY.length)],
+                status: statusOptions[Math.floor(Math.random() * statusOptions.length)],
+                last_validated: new Date(Date.now() - Math.random() * 3600000).toISOString() 
+            };
+        }
+
+        // 2. Функции UI
+        const tableBody = document.getElementById('proxy-table-body');
+        const searchInput = document.getElementById('search-input');
+        const protocolFilter = document.getElementById('protocol-filter');
+        const anonymityFilter = document.getElementById('anonymity-filter');
+        const proxyCountDisplay = document.getElementById('proxy-count');
+        const proxyCountTitle = document.getElementById('proxy-count-title');
+        const noResultsMessage = document.getElementById('no-results');
+        const manualCheckBtn = document.getElementById('manual-check-btn');
+        const toggleIpSplitBtn = document.getElementById('toggle-ip-split-btn'); 
+        const tableHeader = document.getElementById('proxy-table-header'); 
+
+        /**
+         * Определяет класс цвета на основе статуса.
+         * @param {string} status
+         * @returns {string}
+         */
+        function getStatusClass(status) {
+            switch (status) {
+                case 'online': return 'status-online';
+                case 'slow': return 'status-slow';
+                case 'down': return 'status-down';
+                default: return 'text-slate-400';
+            }
+        }
+        
+        /** Обновляет заголовок таблицы в зависимости от режима разделения IP/Port. */
+        function updateTableHeader() {
+            const headerRow = document.createElement('tr');
+            
+            // Определение колонок
+            const columns = [
+                { id: 'ip_port', name: isIpPortSplit ? 'IP Адрес' : 'Адрес:Порт', sortable: true, classes: '' },
+                // Отдельный столбец для Порта, только если включено разделение
+                ...(isIpPortSplit ? [{ id: 'port_only', name: 'Порт', sortable: false, classes: '' }] : []), 
+                { id: 'country_name', name: 'Страна', sortable: true, classes: '' },
+                { id: 'protocol', name: 'Протокол', sortable: true, classes: '' },
+                { id: 'latency_ms', name: 'Задержка (мс)', sortable: true, classes: '' },
+                { id: 'anonymity_level', name: 'Анонимность', sortable: true, classes: 'hidden sm:table-cell' },
+                { id: 'status', name: 'Статус', sortable: true, classes: '' },
+            ];
+            
+            tableHeader.innerHTML = ''; // Очистка текущего заголовка
+
+            columns.forEach(col => {
+                const th = document.createElement('th');
+                // Для Порта не даем кликать (сортируем по ip_port)
+                const sortKey = col.id === 'port_only' ? 'ip_port' : col.id;
+
+                th.className = `px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase ${col.classes} ${col.sortable ? 'cursor-pointer' : ''}`;
+                th.textContent = col.name;
+                
+                if (col.sortable) {
+                    th.setAttribute('onclick', `sortTable('${sortKey}')`);
+                    
+                    // Добавление индикатора сортировки
+                    let sortIcon = '';
+                    if (currentSort.column === sortKey) {
+                        sortIcon = currentSort.direction === 'asc' 
+                            ? '<i data-lucide="chevron-up" class="w-4 h-4 inline ml-1"></i>' 
+                            : '<i data-lucide="chevron-down" class="w-4 h-4 inline ml-1"></i>';
+                    }
+                    th.innerHTML += sortIcon;
+                }
+
+                headerRow.appendChild(th);
+            });
+            tableHeader.appendChild(headerRow);
+            lucide.createIcons();
+        }
+
+        /**
+         * Отображает прокси в таблице.
+         * @param {ProxyItem[]} proxiesToRender
+         */
+        function renderTable(proxiesToRender) {
+            updateTableHeader(); // Обновляем заголовок перед рендерингом строк
+            
+            tableBody.innerHTML = '';
+            if (proxiesToRender.length === 0) {
+                noResultsMessage.classList.remove('hidden');
+                return;
+            }
+            noResultsMessage.classList.add('hidden');
+
+            const fragment = document.createDocumentFragment();
+            proxiesToRender.forEach(proxy => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-slate-700 transition duration-100 ease-in-out';
+                
+                const [ip, port] = proxy.ip_port.split(':'); // Разделение IP и Port
+                
+                let ipPortCell;
+                let portCell = '';
+
+                if (isIpPortSplit) {
+                    // Режим разделения: IP в первой ячейке, Port во второй
+                    ipPortCell = `<td class="px-4 py-3 text-sm font-mono text-white">${ip}</td>`;
+                    portCell = `<td class="px-4 py-3 text-sm font-mono text-slate-400">${port}</td>`;
+                } else {
+                    // Режим объединения: IP:Port в одной ячейке
+                    ipPortCell = `<td class="px-4 py-3 text-sm font-mono text-white">${proxy.ip_port}</td>`;
+                    portCell = ''; // Пустая ячейка
+                }
+
+                row.innerHTML = `
+                    ${ipPortCell}
+                    ${portCell}
+                    <td class="px-4 py-3 text-sm text-slate-300">${proxy.country_name} (${proxy.country_code})</td>
+                    <td class="px-4 py-3 text-xs font-semibold text-emerald-400">${proxy.protocol}</td>
+                    <td class="px-4 py-3 text-sm font-semibold ${proxy.latency_ms > 500 ? 'text-yellow-400' : 'text-emerald-400'}">${proxy.latency_ms} мс</td>
+                    <td class="px-4 py-3 text-xs text-slate-400 hidden sm:table-cell">${proxy.anonymity_level}</td>
+                    <td class="px-4 py-3 text-sm font-bold">
+                        <span class="${getStatusClass(proxy.status)} capitalize flex items-center">
+                            <i data-lucide="circle" class="w-3 h-3 mr-1.5 fill-current"></i>
+                            ${proxy.status === 'online' ? 'Online' : proxy.status === 'slow' ? 'Slow' : 'Down'}
+                        </span>
+                    </td>
+                `;
+                fragment.appendChild(row);
+            });
+
+            tableBody.appendChild(fragment);
+            // Повторная инициализация иконок для новых строк и заголовков
+            lucide.createIcons();
+            
+            // Обновление счетчиков
+            proxyCountDisplay.textContent = `Всего: ${allProxies.length}`;
+            proxyCountTitle.textContent = allProxies.length;
+        }
+
+        /**
+         * Сортирует прокси на основе текущего столбца и направления.
+         * @param {ProxyItem[]} proxies
+         * @returns {ProxyItem[]}
+         */
+        function sortProxies(proxies) {
+            const { column, direction } = currentSort;
+            const directionMultiplier = direction === 'asc' ? 1 : -1;
+
+            return [...proxies].sort((a, b) => {
+                // При сортировке по IP или Port всегда используем ip_port для консистентности
+                const sortCol = column === 'port_only' ? 'ip_port' : column;
+                
+                const aVal = a[sortCol];
+                const bVal = b[sortCol];
+
+                if (typeof aVal === 'number' && typeof bVal === 'number') {
+                    return (aVal - bVal) * directionMultiplier;
+                }
+                if (typeof aVal === 'string' && typeof bVal === 'string') {
+                    return aVal.localeCompare(bVal) * directionMultiplier;
+                }
+                // Для сортировки по статусу
+                if (sortCol === 'status') {
+                    const statusOrder = { 'online': 3, 'slow': 2, 'down': 1 };
+                    const aStatus = statusOrder[a.status] || 0;
+                    const bStatus = statusOrder[b.status] || 0;
+                    return (aStatus - bStatus) * directionMultiplier;
+                }
+                return 0;
+            });
+        }
+
+        /**
+         * Применяет фильтры и поиск, затем перерисовывает таблицу.
+         */
+        function applyFiltersAndRender() {
+            const searchText = searchInput.value.toLowerCase();
+            const selectedProtocol = protocolFilter.value;
+            const selectedAnonymity = anonymityFilter.value;
+
+            let filtered = allProxies.filter(proxy => {
+                const matchesSearch = proxy.ip_port.toLowerCase().includes(searchText) ||
+                                      proxy.country_name.toLowerCase().includes(searchText);
+
+                const matchesProtocol = !selectedProtocol || proxy.protocol === selectedProtocol;
+                const matchesAnonymity = !selectedAnonymity || proxy.anonymity_level === selectedAnonymity;
+
+                return matchesSearch && matchesProtocol && matchesAnonymity;
+            });
+
+            displayedProxies = sortProxies(filtered);
+            renderTable(displayedProxies);
+        }
+
+        /**
+         * Обрабатывает нажатие на заголовок столбца для сортировки.
+         * @param {string} column
+         */
+        window.sortTable = function(column) {
+            if (currentSort.column === column) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = column;
+                currentSort.direction = 'asc';
+            }
+            applyFiltersAndRender();
+        };
+        
+        /** Переключает режим отображения IP:Port и обновляет UI. */
+        window.toggleIpPortDisplay = function() {
+            isIpPortSplit = !isIpPortSplit;
+
+            // Обновление текста кнопки и иконки
+            if (isIpPortSplit) {
+                toggleIpSplitBtn.innerHTML = `<i data-lucide="combine" class="w-5 h-5 mr-2"></i> Объединить IP/Порт`;
+            } else {
+                toggleIpSplitBtn.innerHTML = `<i data-lucide="columns-3" class="w-5 h-5 mr-2"></i> Разделить IP/Порт`;
+            }
+            lucide.createIcons();
+
+            applyFiltersAndRender();
+        }
+
+        // 3. Симуляция Real-Time и Инициализация
+
+        /**
+         * Имитирует получение данных и Real-Time обновления.
+         */
+        function simulateRealtimeUpdates() {
+            // Имитация добавления нового прокси каждые 15 секунд
+            setInterval(() => {
+                const newProxy = generateMockProxy();
+                if (allProxies.length >= MAX_PROXIES) {
+                    allProxies.pop(); // Удаляем старейший прокси, чтобы сохранить лимит
+                }
+                allProxies.unshift(newProxy); // Добавляем новый в начало
+                applyFiltersAndRender();
+            }, 15000);
+
+            // Имитация изменения статуса/задержки каждые 5 секунд (часто для демонстрации проверки)
+            setInterval(() => {
+                if (allProxies.length === 0) return;
+                const randomIndex = Math.floor(Math.random() * allProxies.length);
+                const proxy = allProxies[randomIndex];
+                
+                // Случайное обновление статуса или задержки
+                if (Math.random() < 0.5) {
+                    proxy.latency_ms = Math.floor(Math.random() * 1000) + 50; // Обновление задержки
+                } else {
+                    const statuses = ['online', 'slow', 'down'];
+                    // Случайное, но с уклоном к онлайн
+                    proxy.status = statuses[Math.floor(Math.random() * 7) % 3]; 
+                }
+
+                proxy.last_validated = new Date().toISOString();
+                applyFiltersAndRender();
+            }, 5000);
+        }
+
+        /**
+         * Проводит симулированную ручную валидацию всех прокси.
+         */
+        window.checkAllProxies = function() {
+            if (manualCheckBtn.disabled) return;
+            
+            manualCheckBtn.disabled = true;
+            manualCheckBtn.innerHTML = `<i data-lucide="loader" class="w-5 h-5 mr-2 animate-spin"></i> Выполняется проверка...`;
+            lucide.createIcons();
+            
+            // Имитация длительной проверки (1.5 секунды)
+            setTimeout(() => {
+                let onlineCount = 0;
+                let fixedCount = 0;
+                
+                allProxies.forEach(proxy => {
+                    const oldStatus = proxy.status;
+                    
+                    // Обновление: 80% шанс, что прокси "Online" или "Slow"
+                    if (Math.random() < 0.8) {
+                        proxy.status = Math.random() < 0.7 ? 'online' : 'slow';
+                    } else {
+                        proxy.status = 'down';
+                    }
+                    
+                    // Обновление задержки
+                    proxy.latency_ms = Math.floor(Math.random() * 500) + 30; // Улучшаем среднюю задержку после "валидации"
+                    proxy.last_validated = new Date().toISOString();
+                    
+                    if (proxy.status === 'online') onlineCount++;
+                    if (oldStatus === 'down' && proxy.status !== 'down') fixedCount++;
+                });
+
+                applyFiltersAndRender();
+                
+                // Отображение результатов
+                showModal(
+                    'Валидация завершена', 
+                    `Проверено ${allProxies.length} прокси.
+                     <br>Обновлено статусов: ${fixedCount}
+                     <br>Активных прокси: ${onlineCount}`,
+                    'check-circle'
+                );
+
+                // Сброс кнопки
+                manualCheckBtn.disabled = false;
+                manualCheckBtn.innerHTML = `<i data-lucide="refresh-ccw" class="w-5 h-5 mr-2"></i> Провести ручную валидацию`;
+                lucide.createIcons();
+            }, 1500); 
+        };
+
+        // 4. Функции Модального Окна
+        
+        /**
+         * Отображает модальное окно.
+         * @param {string} title
+         * @param {string} message
+         * @param {string} iconName - Имя иконки Lucide.
+         */
+        function showModal(title, message, iconName = 'info') {
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-body').innerHTML = message;
+            
+            const iconElement = document.getElementById('modal-icon');
+            iconElement.setAttribute('data-lucide', iconName);
+            lucide.createIcons();
+            
+            document.getElementById('message-modal').classList.remove('hidden');
+        }
+
+        /**
+         * Закрывает модальное окно (доступно в window).
+         */
+        window.closeModal = function() {
+            document.getElementById('message-modal').classList.add('hidden');
+        }
+        
+        // 5. Инициализация приложения
+
+        /** Инициализация приложения */
+        function setupApp() {
+            // ГАРАНТИЯ: Очистка фильтров перед загрузкой
+            searchInput.value = '';
+            protocolFilter.value = '';
+            anonymityFilter.value = '';
+
+            // Генерация начальных моковых данных
+            for (let i = 0; i < 250; i++) { // Генерируем 250 прокси для начала
+                allProxies.push(generateMockProxy());
+            }
+
+            // Настройка слушателей событий
+            searchInput.addEventListener('input', applyFiltersAndRender);
+            protocolFilter.addEventListener('change', applyFiltersAndRender);
+            anonymityFilter.addEventListener('change', applyFiltersAndRender);
+
+            // Инициализация отображения
+            applyFiltersAndRender();
+            simulateRealtimeUpdates();
+        }
+
+        // Запуск приложения
+        window.onload = setupApp;
+    </script>
+</body>
+</html>
